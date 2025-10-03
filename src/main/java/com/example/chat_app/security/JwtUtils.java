@@ -19,12 +19,22 @@ public class JwtUtils {
     private String jwtSecret;
     @Value("${jwt.expirationMs}")
     private int jwtExpiration;
+    @Value("${jwt.refreshExpirationMs}")
+    private int jwtRefreshExpiration;
 
-    public String generateJwtToken(String email){
+    public String generateAccessToken(String email){
+        return buildToken(email,jwtExpiration);
+    }
+
+    public String generateRefreshToken(String email){
+        return buildToken(email,jwtRefreshExpiration);
+    }
+
+    public String buildToken(String email,int expiryMs){
         return Jwts.builder()
                 .setSubject(email)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date((new Date()).getTime() + jwtExpiration))
+                .setExpiration(new Date((new Date()).getTime() + expiryMs))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }

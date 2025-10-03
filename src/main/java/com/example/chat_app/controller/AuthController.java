@@ -1,20 +1,17 @@
 package com.example.chat_app.controller;
 
-import com.example.chat_app.dto.LoginResponse;
-import com.example.chat_app.dto.UserResponse;
+import com.example.chat_app.dto.*;
 import com.example.chat_app.model.User;
 import com.example.chat_app.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.example.chat_app.dto.LoginRequest;
-import com.example.chat_app.dto.SignupRequest;
 import com.example.chat_app.security.JwtUtils;
 
 
 @RestController
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "*")
 public class AuthController {
     private final UserService userService;
     private final JwtUtils jwtUtils;
@@ -28,9 +25,26 @@ public class AuthController {
     @PostMapping("/log-in")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         User user = userService.authenticateUser(request.getEmail(), request.getPassword());
-        String token=jwtUtils.generateJwtToken(user.getEmail());
-        return ResponseEntity.ok(new LoginResponse(token, UserResponse.fromUser(user)));
+        String accessToken=jwtUtils.generateAccessToken(user.getEmail());
+        String refreshToken= jwtUtils.generateRefreshToken(user.getEmail());
+        return ResponseEntity.ok(new LoginResponse(accessToken, refreshToken, UserResponse.fromUser(user)));
     }
+
+    @PostMapping("/refresh-token")
+    public ResponseEntity<?> refreshToken(@RequestBody RefreshTokenRequest request) {
+        String refreshToken = request.getRefreshToken();
+        if (jwtUtils.validateJwtToken(refreshToken)) {
+            String email = jwtUtils.getEmailFromJwtToken(refreshToken);
+            String newAccessToken = jwtUtils.generateAccessToken(email);
+            return ResponseEntity.ok(new LoginResponse(
+                    newAccessToken,
+                    refreshToken,
+                    userService.getUserByEmail(email).map(UserResponse::fromUser).orElse(null)
+            ));
+        }
+        return ResponseEntity.badRequest().body("Invalid refresh token");
+    }
+
 }
 
 
