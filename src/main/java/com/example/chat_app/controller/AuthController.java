@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.example.chat_app.security.JwtUtils;
 
+import java.util.List;
+
 
 @RestController
 @RequiredArgsConstructor
@@ -45,6 +47,29 @@ public class AuthController {
         return ResponseEntity.badRequest().body("Invalid refresh token");
     }
 
+    @GetMapping("/dashboard")
+    public ResponseEntity<?> getDashboard() {
+        List<UserResponse> allUsers = userService.getAllUsers()
+                .stream()
+                .map(UserResponse::fromUser)
+                .toList();
+
+        return ResponseEntity.ok(
+                new DashboardResponse("Welcome to your dashboard!", allUsers)
+        );
+    }
+    public static class DashboardResponse {
+        private final String message;
+        private final List<UserResponse> users;
+
+        public DashboardResponse(String message, List<UserResponse> users) {
+            this.message = message;
+            this.users = users;
+        }
+
+        public String getMessage() { return message; }
+        public List<UserResponse> getUsers() { return users; }
+    }
 }
 
 
