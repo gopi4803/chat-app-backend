@@ -64,4 +64,12 @@ public class JwtUtils {
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
+
+    public long getRefreshExpirationSeconds() {
+        return jwtRefreshExpiration / 1000L;
+    }
+
+    public int getRefreshExpirationMs() {
+        return jwtRefreshExpiration;
+    }
 }
