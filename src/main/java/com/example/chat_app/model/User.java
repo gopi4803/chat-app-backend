@@ -26,6 +26,14 @@ public class User {
     @Column(nullable=false)
     private String passwordHash;
 
+    @Column(name = "oauth_provider")
+    private String oauthProvider;
+
+    @Column(name = "oauth_provider_id")
+    private String oauthProviderId;
+
+    private String roles;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

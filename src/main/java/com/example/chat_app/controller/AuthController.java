@@ -34,14 +34,12 @@ public class AuthController {
         String accessToken = jwtUtils.generateAccessToken(user.getEmail());
         String refreshToken = jwtUtils.generateRefreshToken(user.getEmail());
 
-        // Set HttpOnly refresh token cookie
-        // NOTE: For local dev over http, secure(false). In production use secure(true).
         ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken)
                 .httpOnly(true)
-                .secure(false) // change to true in production (HTTPS)
+                .secure(false)
                 .path("/")
-                .maxAge(jwtUtils.getRefreshExpirationSeconds()) // helper method below or use value
-                .sameSite("Strict")
+                .maxAge(jwtUtils.getRefreshExpirationSeconds())
+                .sameSite("Lax")
                 .build();
 
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
