@@ -72,4 +72,15 @@ public class JwtUtils {
     public int getRefreshExpirationMs() {
         return jwtRefreshExpiration;
     }
+
+    public String generateTokenFromUsername(String username) {
+        long now = System.currentTimeMillis();
+        long jwtExpirationMs = 86400000L;
+        return Jwts.builder()
+                .setSubject(username)
+                .setIssuedAt(new Date(now))
+                .setExpiration(new Date(now + jwtExpirationMs))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
 }
