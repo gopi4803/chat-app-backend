@@ -42,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/sign-up", "/log-in", "/refresh-token","/log-out","/api/auth/**",
                                 "/v3/api-docs/**",
+                                "/auth/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()
@@ -75,6 +76,7 @@ public class SecurityConfig {
 
     private AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, authException) -> {
+            System.out.println("Authentication failed for: " + request.getRequestURI());
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized: " + authException.getMessage());
         };
     }
