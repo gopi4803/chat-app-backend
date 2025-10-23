@@ -29,6 +29,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getServletPath();
         System.out.println("JwtAuthFilter checking path: " + path);
 
+        // Skip public endpoints (login/signup/refresh etc.)
         if (path.startsWith("/api/auth/") ||
                 path.startsWith("/auth/forgot-password") ||
                 path.startsWith("/auth/reset-password") ||
@@ -36,11 +37,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 path.equals("/log-in") ||
                 path.equals("/refresh-token") ||
                 path.equals("/log-out")) {
-            System.out.println("Skipping JWT Auth for: " + path);
+            System.out.println("Skipping JWT Auth for public path: " + path);
             filterChain.doFilter(request, response);
             return;
         }
 
+        if (path.startsWith("/ws") || path.startsWith("/sockjs") || path.startsWith("/webjars")) {
+            System.out.println("Skipping JWT Auth for websocket or static path: " + path);
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Require Authorization header for normal API calls
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
