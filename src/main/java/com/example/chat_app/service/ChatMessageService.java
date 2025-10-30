@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -17,26 +19,36 @@ public class ChatMessageService {
     private final ChatMessageRepository messageRepo;
 
     public void saveMessage(ChatMessage chatMessage) {
-        //  Always normalize case before persisting
         chatMessage.setFrom(chatMessage.getFrom().toLowerCase());
         chatMessage.setTo(chatMessage.getTo() != null ? chatMessage.getTo().toLowerCase() : null);
-        messageRepo.save(ChatMessageEntity.fromChatMessage(chatMessage));
-        log.debug("Saved message: {} -> {} [{}]", chatMessage.getFrom(), chatMessage.getTo(), chatMessage.getContent());
+
+        // Generate a messageId if missing
+        if (chatMessage.getMessageId() == null || chatMessage.getMessageId().isBlank()) {
+            chatMessage.setMessageId(UUID.randomUUID().toString());
+        }
+
+        // Avoid duplicates
+        Optional<ChatMessageEntity> existing = messageRepo.findByMessageId(chatMessage.getMessageId());
+        if (existing.isPresent()) {
+            log.debug("Duplicate messageId {} ignored", chatMessage.getMessageId());
+            return;
+        }
+
+        ChatMessageEntity entity = ChatMessageEntity.fromChatMessage(chatMessage);
+        entity.setDelivered(true);
+
+        messageRepo.save(entity);
+        log.debug("Saved message [{}] {} -> {} ({})", chatMessage.getMessageId(), chatMessage.getFrom(), chatMessage.getTo(), chatMessage.getContent());
     }
 
     public List<ChatMessage> getChatHistory(String user1, String user2) {
-        List<ChatMessage> history = messageRepo.findChatHistory(user1, user2)
-                .stream()
+        return messageRepo.findChatHistory(user1, user2).stream()
                 .map(ChatMessageEntity::toChatMessage)
                 .toList();
-        log.debug("Fetched {} messages between {} and {}", history.size(), user1, user2);
-        return history;
     }
 
     public List<ChatMessageEntity> getAllMessagesOfUser(String email) {
-        List<ChatMessageEntity> all = messageRepo.findAllMessagesOfUser(email);
-        log.debug("Fetched {} total messages for {}", all.size(), email);
-        return all;
+        return messageRepo.findAllMessagesOfUser(email);
     }
 
     public List<ChatMessage> getMessagesAfter(String email, long since) {
@@ -44,8 +56,20 @@ public class ChatMessageService {
                 .stream()
                 .map(ChatMessageEntity::toChatMessage)
                 .toList();
-        log.debug("Fetched {} messages for {} since {}", messages.size(), email, since);
-        log.info(" getMessagesAfter() called with email={} since={}", email, since);
+        log.info("getMessagesAfter() called with email={} since={} → {}", email, since, messages.size());
         return messages;
+    }
+
+    public void markMessagesAsRead(String reader, String sender) {
+        List<ChatMessageEntity> unreadMessages = messageRepo.findUnreadMessages(sender, reader);
+        long now = System.currentTimeMillis();
+
+        for (ChatMessageEntity msg : unreadMessages) {
+            msg.setReadAt(now);
+            msg.setDelivered(true);
+        }
+
+        messageRepo.saveAll(unreadMessages);
+        log.info(" Marked {} messages as read from {} -> {}", unreadMessages.size(), sender, reader);
     }
 }
