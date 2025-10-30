@@ -4,22 +4,25 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Message payload used for STOMP messages.
- */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class ChatMessage {
+    private String messageId;
     private MessageType type;
     private String content;
     private String from;
     private String to;
     private long timestamp;
+    private boolean delivered;
+    private Long readAt;
 
     public enum MessageType {
         CHAT,
         JOIN,
-        LEAVE
+        LEAVE,
+        READ_RECEIPT,
+        PRESENCE,
+        TYPING
     }
 }
