@@ -1,6 +1,5 @@
 package com.example.chat_app.websocket;
 
-import com.example.chat_app.model.ChatMessage;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,51 +10,69 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-import java.time.Instant;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
 public class WebSocketEventListener {
 
-    private final Logger logger = LoggerFactory.getLogger(WebSocketEventListener.class);
+    private static final Logger log = LoggerFactory.getLogger(WebSocketEventListener.class);
     private final SimpMessagingTemplate messagingTemplate;
-    private final Set<String> onlineUsers = ConcurrentHashMap.newKeySet();
+
+    private final Map<String, AtomicInteger> sessions = new ConcurrentHashMap<>();
+
+    public Set<String> getOnlineUsers() {
+        return sessions.keySet();
+    }
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectedEvent event) {
         StompHeaderAccessor sha = StompHeaderAccessor.wrap(event.getMessage());
-        String user = sha.getUser() != null ? sha.getUser().getName().toLowerCase() : null;
-        if (user == null) return;
+        String email = sha.getUser() != null ? sha.getUser().getName().toLowerCase() : null;
+        if (email == null) return;
 
-        onlineUsers.add(user);
-        logger.info("WebSocket connected: {}", user);
+        sessions.compute(email, (k, v) -> v == null ? new AtomicInteger(1) : new AtomicInteger(v.incrementAndGet()));
+        log.info(" {} connected ({} sessions)", email, sessions.get(email).get());
 
-        ChatMessage presence = new ChatMessage();
-        presence.setType(ChatMessage.MessageType.PRESENCE);
-        presence.setFrom("system");
-        presence.setTo(user);
-        presence.setTimestamp(Instant.now().toEpochMilli());
-        presence.setContent(user + " is online");
+        //  broadcast "online"
+        messagingTemplate.convertAndSend("/topic/presence", new PresencePayload(email, true));
 
-        // broadcast updated presence map
-        messagingTemplate.convertAndSend("/topic/presence",
-                new PresencePayload(user, true));
+        //  after a small delay, send full presence snapshot only to this user
+        new Timer().schedule(new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    List<PresencePayload> snapshot = sessions.keySet().stream()
+                            .map(u -> new PresencePayload(u, true))
+                            .collect(Collectors.toList());
+                    messagingTemplate.convertAndSendToUser(email, "/queue/presence", snapshot);
+                    log.info(" Sent presence snapshot to {}", email);
+                } catch (Exception ex) {
+                    log.warn("Failed to send snapshot to {}: {}", email, ex.getMessage());
+                }
+            }
+        }, 400); // delay ensures Spring finished mapping the session
     }
 
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         StompHeaderAccessor sha = StompHeaderAccessor.wrap(event.getMessage());
-        String user = sha.getUser() != null ? sha.getUser().getName().toLowerCase() : null;
-        if (user == null) return;
+        String email = sha.getUser() != null ? sha.getUser().getName().toLowerCase() : null;
+        if (email == null) return;
 
-        onlineUsers.remove(user);
-        logger.info("WebSocket disconnected: {}", user);
-
-        messagingTemplate.convertAndSend("/topic/presence",
-                new PresencePayload(user, false));
+        sessions.computeIfPresent(email, (k, v) -> {
+            if (v.decrementAndGet() <= 0) {
+                sessions.remove(k);
+                log.info("{} went offline", email);
+                messagingTemplate.convertAndSend("/topic/presence", new PresencePayload(email, false));
+                return null;
+            }
+            return v;
+        });
     }
 
-    record PresencePayload(String email, boolean online) {}
+    public record PresencePayload(String email, boolean online) {}
 }
