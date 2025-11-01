@@ -13,7 +13,6 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -22,10 +21,18 @@ public class WebSocketEventListener {
     private static final Logger log = LoggerFactory.getLogger(WebSocketEventListener.class);
     private final SimpMessagingTemplate messagingTemplate;
 
+    // email- session count
     private final Map<String, AtomicInteger> sessions = new ConcurrentHashMap<>();
+
+    // email - last seen timestamp
+    private final Map<String, Long> lastSeenMap = new ConcurrentHashMap<>();
 
     public Set<String> getOnlineUsers() {
         return sessions.keySet();
+    }
+
+    public Map<String, Long> getLastSeenMap() {
+        return lastSeenMap;
     }
 
     @EventListener
@@ -35,26 +42,40 @@ public class WebSocketEventListener {
         if (email == null) return;
 
         sessions.compute(email, (k, v) -> v == null ? new AtomicInteger(1) : new AtomicInteger(v.incrementAndGet()));
+        lastSeenMap.remove(email);
+
         log.info(" {} connected ({} sessions)", email, sessions.get(email).get());
 
-        //  broadcast "online"
-        messagingTemplate.convertAndSend("/topic/presence", new PresencePayload(email, true));
+        // broadcast "online"
+        messagingTemplate.convertAndSend("/topic/presence",
+                new PresencePayload(email, true, null));
 
-        //  after a small delay, send full presence snapshot only to this user
+        // send full presence snapshot to this user after delay
         new Timer().schedule(new TimerTask() {
             @Override
             public void run() {
+                List<PresencePayload> snapshot = new ArrayList<>();
+
+                // online users
+                sessions.keySet().forEach(u ->
+                        snapshot.add(new PresencePayload(u, true, null))
+                );
+
+                // offline users (those with last seen timestamps)
+                lastSeenMap.forEach((user, last) -> {
+                    if (!sessions.containsKey(user)) {
+                        snapshot.add(new PresencePayload(user, false, last));
+                    }
+                });
+
                 try {
-                    List<PresencePayload> snapshot = sessions.keySet().stream()
-                            .map(u -> new PresencePayload(u, true))
-                            .collect(Collectors.toList());
                     messagingTemplate.convertAndSendToUser(email, "/queue/presence", snapshot);
                     log.info(" Sent presence snapshot to {}", email);
                 } catch (Exception ex) {
-                    log.warn("Failed to send snapshot to {}: {}", email, ex.getMessage());
+                    log.warn("️ Failed to send presence snapshot: {}", ex.getMessage());
                 }
             }
-        }, 400); // delay ensures Spring finished mapping the session
+        }, 400);
     }
 
     @EventListener
@@ -66,13 +87,17 @@ public class WebSocketEventListener {
         sessions.computeIfPresent(email, (k, v) -> {
             if (v.decrementAndGet() <= 0) {
                 sessions.remove(k);
-                log.info("{} went offline", email);
-                messagingTemplate.convertAndSend("/topic/presence", new PresencePayload(email, false));
+                long now = System.currentTimeMillis();
+                lastSeenMap.put(k, now);
+
+                messagingTemplate.convertAndSend("/topic/presence",
+                        new PresencePayload(k, false, now));
+                log.info(" {} went offline at {}", k, new Date(now));
                 return null;
             }
             return v;
         });
     }
 
-    public record PresencePayload(String email, boolean online) {}
+    public record PresencePayload(String email, boolean online, Long lastSeen) {}
 }
