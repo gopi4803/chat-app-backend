@@ -1,6 +1,7 @@
 package com.example.chat_app.controller;
 
 import com.example.chat_app.model.ChatMessage;
+import com.example.chat_app.model.ChatMessageEntity;
 import com.example.chat_app.service.ChatMessageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -10,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -27,30 +29,28 @@ public class ChatController {
     public void sendMessage(@Payload ChatMessage chatMessage, Authentication authentication) {
         chatMessage.setTimestamp(Instant.now().toEpochMilli());
 
-        if (authentication != null && authentication.getName() != null)
+        if (authentication != null)
             chatMessage.setFrom(authentication.getName().toLowerCase());
 
-        if (chatMessage.getTo() != null)
-            chatMessage.setTo(chatMessage.getTo().toLowerCase());
+        chatMessage.setTo(chatMessage.getTo().toLowerCase());
 
-        // Ensure messageId exists
-        if (chatMessage.getMessageId() == null || chatMessage.getMessageId().isBlank()) {
+        if (chatMessage.getMessageId() == null)
             chatMessage.setMessageId(UUID.randomUUID().toString());
-        }
 
-        chatMessage.setDelivered(true);
+        // DO NOT mark delivered yet
+        chatMessage.setDelivered(false);
+
         chatMessageService.saveMessage(chatMessage);
 
-        // Echo to both sender & receiver
-        messagingTemplate.convertAndSendToUser(chatMessage.getTo(), "/queue/messages", chatMessage);
-        messagingTemplate.convertAndSendToUser(chatMessage.getFrom(), "/queue/messages", chatMessage);
+        // Send to receiver
+        messagingTemplate.convertAndSendToUser(
+                chatMessage.getTo(), "/queue/messages", chatMessage
+        );
 
-        System.out.printf(" %s [%s] %s -> %s : %s%n",
-                chatMessage.getMessageId(),
-                chatMessage.getType(),
-                chatMessage.getFrom(),
-                chatMessage.getTo(),
-                chatMessage.getContent());
+        // Send echo to sender
+        messagingTemplate.convertAndSendToUser(
+                chatMessage.getFrom(), "/queue/messages", chatMessage
+        );
     }
 
     @MessageMapping("/chat.join")
@@ -96,6 +96,26 @@ public class ChatController {
         if (typingMsg.getTo() != null) {
             String receiver = typingMsg.getTo().toLowerCase();
             messagingTemplate.convertAndSendToUser(receiver, "/queue/typing", typingMsg);
+        }
+    }
+
+    @MessageMapping("/chat.delivered")
+    public void markDelivered(@Payload Map<String, String> payload, Authentication auth) {
+        if (auth == null) return;
+
+        String messageId = payload.get("messageId");
+        if (messageId == null) return;
+
+        chatMessageService.markDeliveredByMessageId(messageId);
+
+        // Notify sender so ✓✓ updates immediately
+        ChatMessageEntity ent = chatMessageService.getByMessageId(messageId);
+        if (ent != null) {
+            messagingTemplate.convertAndSendToUser(
+                    ent.getFromUser(),
+                    "/queue/messages",
+                    ent.toChatMessage()
+            );
         }
     }
 

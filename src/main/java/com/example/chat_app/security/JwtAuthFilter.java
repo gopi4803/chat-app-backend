@@ -60,6 +60,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         try {
             String email = jwtUtils.getEmailFromJwtToken(jwt);
+            System.out.println("Extracted email from token: " + email);
 
             if (email == null || !jwtUtils.validateJwtToken(jwt)) {
                 throw new BadCredentialsException("Invalid or expired JWT token");

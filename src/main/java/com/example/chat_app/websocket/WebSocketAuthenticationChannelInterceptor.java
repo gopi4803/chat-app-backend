@@ -72,7 +72,7 @@ public class WebSocketAuthenticationChannelInterceptor implements ChannelInterce
                 logger.info(" WebSocket user authenticated: {}", email);
 
             } catch (Exception ex) {
-                logger.error("⚠ WebSocket authentication failed: {}", ex.getMessage(), ex);
+                logger.error(" WebSocket authentication failed: {}", ex.getMessage(), ex);
             }
         }
         return message;

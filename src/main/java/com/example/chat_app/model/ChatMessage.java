@@ -23,6 +23,6 @@ public class ChatMessage {
         LEAVE,
         READ_RECEIPT,
         PRESENCE,
-        TYPING
+        SYSTEM, TYPING
     }
 }
