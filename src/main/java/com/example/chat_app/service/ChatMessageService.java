@@ -6,6 +6,7 @@ import com.example.chat_app.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -20,26 +21,30 @@ public class ChatMessageService {
 
     public void saveMessage(ChatMessage chatMessage) {
         chatMessage.setFrom(chatMessage.getFrom().toLowerCase());
-        chatMessage.setTo(chatMessage.getTo() != null ? chatMessage.getTo().toLowerCase() : null);
+        chatMessage.setTo(chatMessage.getTo() != null
+                ? chatMessage.getTo().toLowerCase()
+                : null);
 
-        // Generate a messageId if missing
         if (chatMessage.getMessageId() == null || chatMessage.getMessageId().isBlank()) {
             chatMessage.setMessageId(UUID.randomUUID().toString());
         }
 
-        // Avoid duplicates
-        Optional<ChatMessageEntity> existing = messageRepo.findByMessageId(chatMessage.getMessageId());
-        if (existing.isPresent()) {
+        if (messageRepo.findByMessageId(chatMessage.getMessageId()).isPresent()) {
             log.debug("Duplicate messageId {} ignored", chatMessage.getMessageId());
             return;
         }
 
         ChatMessageEntity entity = ChatMessageEntity.fromChatMessage(chatMessage);
-        entity.setDelivered(true);
 
         messageRepo.save(entity);
-        log.debug("Saved message [{}] {} -> {} ({})", chatMessage.getMessageId(), chatMessage.getFrom(), chatMessage.getTo(), chatMessage.getContent());
+
+        log.debug("Saved message [{}] {} -> {} (delivered={})",
+                entity.getMessageId(),
+                entity.getFromUser(),
+                entity.getToUser(),
+                entity.isDelivered());
     }
+
 
     public List<ChatMessage> getChatHistory(String user1, String user2) {
         return messageRepo.findChatHistory(user1, user2).stream()
@@ -72,4 +77,33 @@ public class ChatMessageService {
         messageRepo.saveAll(unreadMessages);
         log.info(" Marked {} messages as read from {} -> {}", unreadMessages.size(), sender, reader);
     }
+
+    @Transactional
+    public List<ChatMessageEntity> markMessagesAsDelivered(String receiver) {
+        List<ChatMessageEntity> undelivered =
+                messageRepo.findUndeliveredMessages(receiver);
+
+        for (ChatMessageEntity m : undelivered) {
+            m.setDelivered(true);
+        }
+
+        messageRepo.saveAll(undelivered);
+        return undelivered;
+    }
+
+
+    @Transactional
+    public void markDeliveredByMessageId(String messageId) {
+        messageRepo.findByMessageId(messageId).ifPresent(msg -> {
+            if (!msg.isDelivered()) {
+                msg.setDelivered(true);
+                messageRepo.save(msg);
+            }
+        });
+    }
+
+    public ChatMessageEntity getByMessageId(String messageId) {
+        return messageRepo.findByMessageId(messageId).orElse(null);
+    }
+
 }

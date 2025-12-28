@@ -44,5 +44,12 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
     """)
     List<ChatMessageEntity> findUnreadMessages(@Param("sender") String sender, @Param("reader") String reader);
 
+    @Query("""
+     SELECT c FROM ChatMessageEntity c
+     WHERE LOWER(c.toUser) = LOWER(:receiver)
+       AND c.delivered = false
+    """)
+    List<ChatMessageEntity> findUndeliveredMessages(@Param("receiver") String receiver);
+
     Optional<ChatMessageEntity> findByMessageId(String messageId);
 }

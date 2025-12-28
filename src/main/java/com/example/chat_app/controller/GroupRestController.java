@@ -1,12 +1,9 @@
 package com.example.chat_app.controller;
 
-import com.example.chat_app.model.Group;
-import com.example.chat_app.model.GroupMember;
-import com.example.chat_app.model.User;
+import com.example.chat_app.model.*;
 import com.example.chat_app.security.JwtUtils;
 import com.example.chat_app.service.GroupService;
 import com.example.chat_app.service.GroupMessageService;
-import com.example.chat_app.model.GroupMessageEntity;
 import com.example.chat_app.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -211,49 +208,34 @@ public class GroupRestController {
     }
 
     @GetMapping("/{id}/messages")
-    public ResponseEntity<?> getGroupMessages(@PathVariable Long id, Authentication auth) {
-        if (auth == null) return ResponseEntity.status(401).build();
-        try {
-            List<GroupMessageEntity> msgs = groupMessageService.getGroupMessages(id);
+    public ResponseEntity<?> getGroupMessages(@PathVariable Long id) {
 
-            List<Map<String, Object>> out = msgs.stream().map(m -> {
-                Map<String, Object> msgMap = new LinkedHashMap<>();
-                msgMap.put("messageId", m.getMessageId());
-                msgMap.put("groupId", m.getGroup().getId());
+        List<GroupMessageEntity> msgs =
+                groupMessageService.getGroupMessages(id);
 
-                //  Determine display name correctly
-                String senderDisplay = null;
+        List<Map<String, Object>> out = msgs.stream().map(m -> {
 
-                if (m.getDisplayName() != null && !m.getDisplayName().isBlank()) {
-                    senderDisplay = m.getDisplayName();
-                } else if (m.getSender() != null && !m.getSender().equalsIgnoreCase("system")) {
-                    // Try fetching username if missing
-                    senderDisplay = userService.getUserByEmail(m.getSender())
-                            .map(User::getUsername)
-                            .orElse(m.getSender());
-                    // Patch DB if displayName missing (so next reload is instant)
-                    try {
-                        m.setDisplayName(senderDisplay);
-                        groupMessageService.updateDisplayName(m.getId(), senderDisplay);
-                    } catch (Exception ignored) {}
-                } else if ("system".equalsIgnoreCase(m.getSender())) {
-                    senderDisplay = "System";
-                }
+            var deliveries = groupMessageService.getDeliveries(m.getMessageId());
+            var reads = groupMessageService.getReads(m.getMessageId());
 
-                msgMap.put("sender", m.getSender());
-                msgMap.put("senderName", senderDisplay);
-                msgMap.put("content", m.getContent());
-                msgMap.put("timestamp", m.getTimestamp());
-                msgMap.put("type", m.getType());
-                msgMap.put("delivered", m.isDelivered());
-                msgMap.put("readAt", m.getReadAt());
-                return msgMap;
-            }).collect(Collectors.toList());
+            return Map.of(
+                    "messageId", m.getMessageId(),
+                    "groupId", m.getGroup().getId(),
+                    "sender", m.getSender(),
+                    "senderName", m.getDisplayName(),
+                    "content", m.getContent(),
+                    "timestamp", m.getTimestamp(),
+                    "type", m.getType(),
+                    "deliveredRecipients",
+                    deliveries.stream().map(GroupMessageDeliveryEntity::getUserEmail).toList(),
+                    "readRecipients",
+                    reads.stream()
+                            .map(r -> Map.of("email", r.getUserEmail(), "readAt", r.getReadAt()))
+                            .toList()
+            );
+        }).toList();
 
-            return ResponseEntity.ok(out);
-        } catch (Exception ex) {
-            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
-        }
+        return ResponseEntity.ok(out);
     }
 
 }
